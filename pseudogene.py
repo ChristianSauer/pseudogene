@@ -29,7 +29,7 @@ class PseudoGeneFinder(object):
         self.folder_name = None
         self.results = None
 
-    def prepare_input(self):
+    def _prepare_input(self):
         lines = open(self.source_file).readlines()
         lines = lines[self.config["skip_first_n_lines"]:]
 
@@ -51,7 +51,7 @@ class PseudoGeneFinder(object):
 
         return all_primers
 
-    def find_genes(self):
+    def _find_genes(self):
         found_genes_df = self.primers[self.primers['names'].str.contains(self.search_gene)]
         if len(found_genes_df) == 0:
             raise IOError("No genes selected")
@@ -61,7 +61,7 @@ class PseudoGeneFinder(object):
 
         return found_genes_df
 
-    def collect_results(self):
+    def _collect_results(self):
         # assumption: first gene is always the main - match.
         # We are trying to find duplicates (pseudogenes) in the rows after that
         # a pseudogene has a high identity and similar span
@@ -98,7 +98,7 @@ class PseudoGeneFinder(object):
         print "Writing pseudogenes into: " + local_path
         master_df.to_excel(local_path)
 
-    def prepare_reduced_df(self):
+    def _prepare_reduced_df(self):
         def create_pos19_str(x):
             return x["chromosome"] + ":" + str(x["start [hg19]"]) + "-" + str(x["end [hg19]"])
 
@@ -107,27 +107,28 @@ class PseudoGeneFinder(object):
         self.reduced_df["sequence length"] = self.reduced_df["end [hg19]"] - self.reduced_df["start [hg19]"]
         self.reduced_df["genomic sequence [hg19]"] = ""
 
-    def get_and_append_dna(self):
+    def _get_and_append_dna(self):
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count() * 2)
 
         results_for_pseudogenes = []
 
-        def get_result(args):
-            result, data, current_row = args
+        def apply_results(args):
+            pseudogene_table, data, current_row = args
             # This is called whenever foo_pool(i) returns a result.
             # result_list is modified only by the main process, not the pool workers.
             self.reduced_df.set_value(current_row, "genomic sequence [hg19]", data)
-            results_for_pseudogenes.append(result)
+            results_for_pseudogenes.append(pseudogene_table)
 
-        # result = [get_data((i, row)) for i, row in reduced_df.iterrows()]
-        result = pool.map(get_data, ((i, row, self.hgsid, self.config, self.folder_name) for i, row in self.reduced_df.iterrows()))
-        _ = [get_result(x) for x in result if x is not None]
+        result = pool.map(_get_data, ((i, row, self.hgsid, self.config, self.folder_name) for i, row in
+                                      self.reduced_df.iterrows()))
+        _ = [apply_results(x) for x in result if x is not None]
         pool.close()
         pool.join()
 
         return results_for_pseudogenes
 
-    def get_folder_name(self, gene_name):
+    @staticmethod
+    def _get_folder_name(gene_name):
         import shutil
         local_folder = os.path.join(os.getcwd(), gene_name)
         if os.path.isdir(local_folder):
@@ -145,7 +146,7 @@ class PseudoGeneFinder(object):
         print ("Using hgsid: " + self.hgsid)
         print "Source File: " + self.source_file
 
-        self.primers = self.prepare_input()
+        self.primers = self._prepare_input()
 
         print "Please enter a gene name"
         search_gene = raw_input('--> ')
@@ -153,18 +154,18 @@ class PseudoGeneFinder(object):
 
         print "searching for: %s" % search_gene
 
-        self.reduced_df = self.find_genes()
+        self.reduced_df = self._find_genes()
 
         if raw_input("Continue? y or n").lower().strip() == "n":
             exit()
 
-        self.folder_name = self.get_folder_name(search_gene)
+        self.folder_name = self._get_folder_name(search_gene)
 
-        self.prepare_reduced_df()
-        self.results = self.get_and_append_dna()
+        self._prepare_reduced_df()
+        self.results = self._get_and_append_dna()
 
         print "Step 3: collecting results into output table"
-        self.collect_results()
+        self._collect_results()
 
         print "Step 4: generating DNA Table"
         file_name = "DNA FOR {}.xlsx".format(search_gene)
@@ -175,7 +176,7 @@ class PseudoGeneFinder(object):
         print("Done")
 
 
-def get_data(args):
+def _get_data(args):
     current_row, row, hg_sid, cfg, folder = args
 
     dna_pos = row["position [hg19]"]
@@ -220,31 +221,7 @@ def get_data(args):
             "Could not execute getDNA for {}, HGSID stale? Get a new one and paste it into config.json".format(
                 dna_pos))
 
+
 if __name__ == "__main__":
     worker = PseudoGeneFinder()
     worker.find_pseudogenes()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
