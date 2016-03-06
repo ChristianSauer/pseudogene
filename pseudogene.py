@@ -1,6 +1,7 @@
 # coding=utf-8
 from StringIO import StringIO
 import json
+import logging
 import os
 import requests
 from step2 import step2
@@ -11,15 +12,22 @@ import multiprocessing
 __author__ = 'Christian Sauer'
 
 pd.options.mode.chained_assignment = None
+logging.basicConfig(level=logging.DEBUG, filename="log.txt", filemode="a+",
+                    format="%(asctime)-15s %(levelname)-8s %(message)s")
+
+logger = logging.getLogger(__name__)
 
 
 class PseudoGeneFinder(object):
-    def __init__(self, config=None):
+    def __init__(self, config=None, genes=None):
+
         if config is None:
-            with open('config.json') as data_file:
-                self.config = json.load(data_file)
+            config_path = 'config.json'
         else:
-            self.config = config
+            config_path = config
+
+        with open(config_path) as data_file:
+            self.config = json.load(data_file)
 
         self.hgsid = self.config["hgsid"]
         self.source_file = self.config["source"]
@@ -28,6 +36,8 @@ class PseudoGeneFinder(object):
         self.search_gene = None
         self.folder_name = None
         self.results = None
+        self.genes = genes
+        self._unattended = genes is not None
 
     def _prepare_input(self):
         lines = open(self.source_file).readlines()
@@ -40,14 +50,14 @@ class PseudoGeneFinder(object):
                 lines = lines[pos + 1:]
                 break
         else:
-            print ("no duplicate tracks found")
+            logger.info("no duplicate tracks found")
 
         column_names = [x.strip() for x in self.config["column_names"].split(",")]
 
         io_lines = StringIO(u"\n".join(lines))
         all_primers = pd.read_table(io_lines, names=column_names, header=None)
 
-        print "Read %s primers" % len(all_primers)
+        logger.info("Read %s primers" % len(all_primers))
 
         return all_primers
 
@@ -56,8 +66,8 @@ class PseudoGeneFinder(object):
         if len(found_genes_df) == 0:
             raise IOError("No genes selected")
 
-        print("Genes found: \n" + "\n".join(found_genes_df['names'].unique()))
-        print "found %s genes" % len(found_genes_df)
+        logger.info("Genes found: \n" + "\n".join(found_genes_df['names'].unique()))
+        logger.info("found %s genes" % len(found_genes_df))
 
         return found_genes_df
 
@@ -68,7 +78,7 @@ class PseudoGeneFinder(object):
 
         filtered_dfs = []
         for df in self.results:
-            print "Checking Exon:{}".format(df["Exon"][0])
+            logger.info("Checking Exon:{}".format(df["Exon"][0]))
             reference_row = df.iloc[0]
             df["span_similarity"] = df.apply(lambda x: (100 * x["SPAN"]) / reference_row["SPAN"], axis=1)
             df["identity_number"] = df.apply(lambda x: float(x["IDENTITY"].strip().replace("%", "")), axis=1)
@@ -81,7 +91,7 @@ class PseudoGeneFinder(object):
             # always ignore first row
             combined_mask[0] = False
 
-            print "{} potential pseudogenes found.".format(sum(combined_mask))
+            logger.info("{} potential pseudogenes found.".format(sum(combined_mask)))
             matching_df = df[combined_mask]
             matching_df.drop('identity_number', axis=1, inplace=True)
             filtered_dfs.append(matching_df)
@@ -95,7 +105,7 @@ class PseudoGeneFinder(object):
         master_df["config_max_span_similarity"] = self.config["max_span_similarity"]
         xlsx_name = "Pseudognes for {}.xlsx".format(self.search_gene)
         local_path = os.path.join(self.folder_name, xlsx_name)
-        print "Writing pseudogenes into: " + local_path
+        logger.info("Writing pseudogenes into: " + local_path)
         master_df.to_excel(local_path)
 
     def _prepare_reduced_df(self):
@@ -108,7 +118,7 @@ class PseudoGeneFinder(object):
         self.reduced_df["genomic sequence [hg19]"] = ""
 
     def _get_and_append_dna(self):
-        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count() * 2)
+        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count() * 1)
 
         results_for_pseudogenes = []
 
@@ -127,53 +137,56 @@ class PseudoGeneFinder(object):
 
         return results_for_pseudogenes
 
-    @staticmethod
-    def _get_folder_name(gene_name):
+    def _get_folder_name(self, gene_name):
         import shutil
         local_folder = os.path.join(os.getcwd(), gene_name)
         if os.path.isdir(local_folder):
             msg = "Warning Folder {} already exists. Deleting all content and continue? y or n".format(local_folder)
-            if raw_input(msg).lower().strip() == "n":
-                exit()
+            if not self._unattended:
+                if raw_input(msg).lower().strip() == "n":
+                    exit()
             else:
-
                 shutil.rmtree(local_folder)
 
         os.makedirs(local_folder)
         return local_folder
 
     def find_pseudogenes(self):
-        print ("Using hgsid: " + self.hgsid)
-        print "Source File: " + self.source_file
+        logger.info("Using hgsid: " + self.hgsid)
+        logger.info("Source File: " + self.source_file)
 
         self.primers = self._prepare_input()
 
-        print "Please enter a gene name"
-        search_gene = raw_input('--> ')
-        self.search_gene = search_gene.strip().upper()
+        if self.genes is None:
+            print "Please enter a gene name"
+            search_gene = raw_input('--> ')
+            self.search_gene = search_gene.strip().upper()
 
-        print "searching for: %s" % search_gene
+            print "searching for: %s" % search_gene
+            self.genes = search_gene
+            if raw_input("Continue? y or n").lower().strip() == "n":
+                exit()
 
-        self.reduced_df = self._find_genes()
+        lines = self.genes.splitlines()
+        for search_gene in lines:
+            self.search_gene = search_gene
+            self.reduced_df = self._find_genes()
 
-        if raw_input("Continue? y or n").lower().strip() == "n":
-            exit()
+            self.folder_name = self._get_folder_name(search_gene)
 
-        self.folder_name = self._get_folder_name(search_gene)
+            self._prepare_reduced_df()
+            self.results = self._get_and_append_dna()
 
-        self._prepare_reduced_df()
-        self.results = self._get_and_append_dna()
+            logger.info("Step 3: collecting results into output table")
+            self._collect_results()
 
-        print "Step 3: collecting results into output table"
-        self._collect_results()
+            logger.info("Step 4: generating DNA Table")
+            file_name = "DNA FOR {}.xlsx".format(search_gene)
 
-        print "Step 4: generating DNA Table"
-        file_name = "DNA FOR {}.xlsx".format(search_gene)
-
-        local_result_path = os.path.join(self.folder_name, file_name)
-        self.reduced_df.to_excel(local_result_path)
-        print("Written to: {}".format(local_result_path))
-        print("Done")
+            local_result_path = os.path.join(self.folder_name, file_name)
+            self.reduced_df.to_excel(local_result_path)
+            logger.info(("Written to: {}".format(local_result_path)))
+        logger.info(("Done"))
 
 
 def _get_data(args):
@@ -206,9 +219,10 @@ def _get_data(args):
             data = data.splitlines()
             data = data[2:]
             data = u"".join(data)
-            print(data)
+            logger.info((data))
         except AttributeError:
-            print 'No tables found, exiting'
+            logger.info( 'No tables found, exiting')
+            logger.warn(data)
 
         name = "{} {} {}-{}".format(row["gene name"], current_row, row["start [hg19]"], row["end [hg19]"])
 
@@ -216,8 +230,8 @@ def _get_data(args):
 
         return results_df, data, current_row
     except Exception as ex:
-        print(ex)
-        print(
+        logger.exception("Something bad happened")
+        logger.info(
             "Could not execute getDNA for {}, HGSID stale? Get a new one and paste it into config.json".format(
                 dna_pos))
 
