@@ -1,0 +1,11 @@
+{
+	"source": "Exons_CCDS_hg19.bed",
+	"skip_first_n_lines": 0,
+	"skip_lines_after": "",
+    "column_names": "chromosome, start [hg19], end [hg19], names, unknown1, unknown2",
+    "detailed_results_to_excel": true,
+    "hgsid": "479504545_7seZWHn1bt2m9mdvIXjh4pfPf8db",
+    "min_identity": 95,
+    "min_span_similarity": 95,
+    "max_span_similarity": 120
+}
