@@ -4,7 +4,7 @@
 	"skip_lines_after": "",
     "column_names": "chromosome, start [hg19], end [hg19], names, unknown1, unknown2",
     "detailed_results_to_excel": true,
-    "hgsid": "479723519_IOduwAnj6R3szjboknG4MO7dadQn",
+    "hgsid": "488460459_PWD58WWNDzDBFVHLEARDAdzMuaVM",
     "min_identity": 95,
     "min_span_similarity": 95,
     "max_span_similarity": 120

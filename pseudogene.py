@@ -118,7 +118,7 @@ class PseudoGeneFinder(object):
         self.reduced_df["genomic sequence [hg19]"] = ""
 
     def _get_and_append_dna(self):
-        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count() * 1)
+        pool = multiprocessing.Pool(processes=1)
 
         results_for_pseudogenes = []
 
@@ -219,9 +219,9 @@ def _get_data(args):
             data = data.splitlines()
             data = data[2:]
             data = u"".join(data)
-            logger.info((data))
+            logger.info(data)
         except AttributeError:
-            logger.info( 'No tables found, exiting')
+            logger.info('No tables found, exiting')
             logger.warn(data)
 
         name = "{} {} {}-{}".format(row["gene name"], current_row, row["start [hg19]"], row["end [hg19]"])
