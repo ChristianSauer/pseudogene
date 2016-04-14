@@ -3,6 +3,8 @@ from StringIO import StringIO
 import json
 import logging
 import os
+import datetime
+import shutil
 import requests
 from step2 import step2
 from bs4 import BeautifulSoup
@@ -100,13 +102,26 @@ class PseudoGeneFinder(object):
         for df in filtered_dfs:
             master_df = master_df.append(df)
 
+        # always show at least one line with the collecting information
+        if len(master_df) == 0:
+            master_df = self._append_no_pseudogenes_info(master_df)
+
         master_df["config_min_identity"] = self.config["min_identity"]
         master_df["config_min_span_similarity"] = self.config["min_span_similarity"]
         master_df["config_max_span_similarity"] = self.config["max_span_similarity"]
+
         xlsx_name = "Pseudognes for {}.xlsx".format(self.search_gene)
         local_path = os.path.join(self.folder_name, xlsx_name)
         logger.info("Writing pseudogenes into: " + local_path)
         master_df.to_excel(local_path)
+
+    def _append_no_pseudogenes_info(self, master_df):
+        dummy_data = {"Browser": "", "Details": "No Pseudogenes found", "QUERY": "", "SCORE": "", "START": "",
+                      "END": "", "QSIZE": "",
+                      "IDENTITY": "", "CHRO": "", "STRAND": "", "START.1": "", "END.1": "", "SPAN": "", "Exon": ""
+                      }
+        master_df = master_df.append(dummy_data, ignore_index=True)
+        return master_df
 
     def _prepare_reduced_df(self):
         def create_pos19_str(x):
@@ -138,18 +153,21 @@ class PseudoGeneFinder(object):
         return results_for_pseudogenes
 
     def _get_folder_name(self, gene_name):
-        import shutil
         local_folder = os.path.join(os.getcwd(), gene_name)
         if os.path.isdir(local_folder):
-            msg = "Warning Folder {} already exists. Deleting all content and continue? y or n".format(local_folder)
-            if not self._unattended:
-                if raw_input(msg).lower().strip() == "n":
-                    exit()
-            else:
-                shutil.rmtree(local_folder)
+            self._rename_old_data_folder(local_folder)
 
         os.makedirs(local_folder)
         return local_folder
+
+    def _rename_old_data_folder(self, local_folder):
+        msg = "Warning Folder {} already exists. The folder will be renamed. Continue? y or n".format(local_folder)
+        if not self._unattended:
+            if raw_input(msg).lower().strip() == "n":
+                exit()
+        else:
+            back_fn_name = local_folder + "_" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            shutil.move(local_folder, back_fn_name)
 
     def find_pseudogenes(self):
         logger.info("Using hgsid: " + self.hgsid)
